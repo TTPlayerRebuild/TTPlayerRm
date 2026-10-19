@@ -1,0 +1,27 @@
+#include <winver.h>
+1 VERSIONINFO
+FILEVERSION @RM_FIXED_VERSION@
+PRODUCTVERSION @RM_FIXED_VERSION@
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_DLL
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Sonic853\0"
+      VALUE "FileDescription", "TTPlayer RealAudio audio add-in\0"
+      VALUE "FileVersion", "@RM_BUILD_VERSION@\0"
+      VALUE "InternalName", "ttp_rm\0"
+      VALUE "OriginalFilename", "ttp_rm.dll\0"
+      VALUE "ProductName", "TTPlayer Rebuild RM\0"
+      VALUE "ProductVersion", "@RM_BUILD_VERSION@\0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END

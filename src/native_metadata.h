@@ -123,10 +123,11 @@ struct NativeMetadata {
         set32(b,4,DWORD(b.size()));return b;
     }
     struct Temporary {
-        wchar_t path[MAX_PATH]{};ComPtr<IStream> stream;
+        wchar_t path[MAX_PATH]{};ComPtr<IStream> stream;bool keep{};
         Temporary(){wchar_t folder[MAX_PATH]{};require(GetTempPathW(MAX_PATH,folder)>0,E_FAIL);require(GetTempFileNameW(folder,L"trm",0,path)!=0,E_FAIL);
             auto hr=SHCreateStreamOnFileEx(path,STGM_READWRITE|STGM_SHARE_DENY_WRITE,0,FALSE,nullptr,stream.put());if(FAILED(hr)){DeleteFileW(path);check(hr);}}
-        ~Temporary(){stream.reset();if(*path)DeleteFileW(path);}
+        void preserve(){keep=true;OutputDebugStringW(L"ttp_rm recovery copy: ");OutputDebugStringW(path);OutputDebugStringW(L"\n");}
+        ~Temporary(){stream.reset();if(*path&&!keep)DeleteFileW(path);}
     };
     static void copy(IStream *from,IStream *to,uint64_t count){
         Bytes b(65536);while(count){auto n=DWORD(std::min<uint64_t>(count,b.size()));read_exact(from,b.data(),n);write_exact(to,b.data(),n);count-=n;}
@@ -168,7 +169,8 @@ struct NativeMetadata {
             if(FAILED(result)){
                 // Preserve the first write/commit error even if best-effort
                 // rollback itself fails. No retry is performed by Release.
-                protect([&]()->HRESULT{seek(backup.stream.p,0);seek(destination,0);copy(backup.stream.p,destination,original_size);ULARGE_INTEGER size{};size.QuadPart=original_size;check(destination->SetSize(size));commit_stream(destination);return S_OK;});
+                const auto restored=protect([&]()->HRESULT{seek(backup.stream.p,0);seek(destination,0);copy(backup.stream.p,destination,original_size);ULARGE_INTEGER size{};size.QuadPart=original_size;check(destination->SetSize(size));commit_stream(destination);return S_OK;});
+                if(FAILED(restored)){backup.preserve();staged.preserve();OutputDebugStringW(L"ttp_rm: write and rollback failed; recovery files retained.\n");}
                 return result;
             }
             dirty=false;return S_OK;

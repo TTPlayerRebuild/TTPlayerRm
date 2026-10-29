@@ -24,6 +24,7 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
     std::vector<Tag> tags_; Bytes pcm_; size_t consumed_{};
     uint64_t media_end_{},position_{}; DWORD duration_{},bitrate_{};
     HRESULT io_error_{S_OK}; bool opened_{},draining_{},eof_{}; LONG stopped_{};
+    HRESULT terminal_decode_error_{S_OK};
     bool resume_pending_{}; uint64_t resume_position_{};
     ttp::pcm::History history_;uint64_t decode_head_{};
     void io_failure(HRESULT hr) {
@@ -103,6 +104,7 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
     }
     void open_container(){
         io_error_=S_OK;draining_=eof_=packet_ready_=false;pcm_.clear();consumed_=0;
+        terminal_decode_error_=S_OK;
         priming_remaining_=0;invert_atrac_=false;
         auto *buffer=static_cast<unsigned char*>(av_malloc(32768));require(buffer,E_OUTOFMEMORY);
         io_=avio_alloc_context(buffer,32768,0,this,read_callback,nullptr,input_.seekable?seek_callback:nullptr);
@@ -154,8 +156,24 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
         const auto *p=container_->streams[stream_index_]->codecpar;
         auto *codec=avcodec_find_decoder(p->codec_id);require(codec,E_NOTIMPL);
         decoder_=avcodec_alloc_context3(codec);require(decoder_,E_OUTOFMEMORY);
-        check_av(avcodec_parameters_to_context(decoder_,p));decoder_->thread_count=1;
-        check_av(avcodec_open2(decoder_,codec,nullptr));
+        try{
+            check_av(avcodec_parameters_to_context(decoder_,p));decoder_->thread_count=1;
+            check_av(avcodec_open2(decoder_,codec,nullptr));
+            if(p->codec_id==AV_CODEC_ID_COOK){
+                // RM declares only the channel count. Cook's subpacket headers
+                // supply the speaker mask during decoder initialization.
+                const auto &layout=decoder_->ch_layout;
+                require(decoder_->sample_rate==int(format_.nSamplesPerSec)&&
+                    layout.nb_channels==format_.nChannels,E_NOTIMPL);
+                require(layout.order==AV_CHANNEL_ORDER_NATIVE&&layout.u.mask&&
+                    layout.u.mask<=0x3ffff,E_NOTIMPL);
+                channel_mask_=DWORD(layout.u.mask);
+            }
+        }catch(...){
+            // A failed lazy Format/init must not leave an unopened context that
+            // subsequent calls mistake for a successfully prepared decoder.
+            avcodec_free_context(&decoder_);throw;
+        }
     }
     static float sample(const AVFrame *f,int index,int channel){
         const auto fmt=AVSampleFormat(f->format);const auto packed=av_get_packed_sample_fmt(fmt);
@@ -177,15 +195,36 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
         const auto skip=std::min<unsigned>(priming_remaining_,unsigned(frame_->nb_samples));
         priming_remaining_-=skip;
         pcm_.resize(size_t(frame_->nb_samples-skip)*format_.nBlockAlign);consumed_=0;
+        const bool legacy_sipr=decoder_->codec_id==AV_CODEC_ID_SIPR;
         for(int i=int(skip);i<frame_->nb_samples;++i)for(int c=0;c<format_.nChannels;++c){
             float value=sample(frame_,i,c);if(!std::isfinite(value))value=0;
             if(invert_atrac_)value=-value;
             size_t n=size_t(i-skip)*format_.nChannels+c;
             if(twin_vq){value=std::clamp(value,-32700.0f/32768,32700.0f/32768);memcpy(pcm_.data()+n*4,&value,4);}
+            else if(legacy_sipr){
+                // Original RealCodec adds 0.5 then truncates toward zero (also
+                // for negative samples). Clamp before conversion to avoid an
+                // out-of-range integer conversion on damaged input.
+                const auto v=int16_t(std::clamp(double(value)*32768.0+0.5,-32768.0,32767.0));
+                memcpy(pcm_.data()+n*2,&v,2);
+            }
             else{const auto v=int16_t(std::clamp(std::lrintf(value*32768.0f),-32768L,32767L));memcpy(pcm_.data()+n*2,&v,2);}
         }
     }
     bool next(){
+        // A truncated final packet must remain an error after cached PCM is
+        // replayed. The demuxer may report EOF on a second attempt; do not turn
+        // that into a successful end. IStream cancellation keeps its existing
+        // replay/recovery path, and transient allocation failures are retryable.
+        check(terminal_decode_error_);
+        try{return next_impl();}
+        catch(const Failure &e){
+            if(SUCCEEDED(io_error_)&&e.code==HRESULT_FROM_WIN32(ERROR_INVALID_DATA))
+                terminal_decode_error_=e.code;
+            throw;
+        }
+    }
+    bool next_impl(){
         prepare();if(eof_)return false;
         for(unsigned attempts=0;attempts<100000;++attempts){
             auto result=avcodec_receive_frame(decoder_,frame_);
@@ -246,7 +285,11 @@ public:
     HRESULT STDMETHODCALLTYPE Duration(DWORD *out) override{if(!out)return E_POINTER;*out=duration_;return opened_?S_OK:E_UNEXPECTED;}
     HRESULT STDMETHODCALLTYPE Format(WAVEFORMATEX **out) override {
         if(!out)return E_POINTER;*out=nullptr;if(!opened_)return E_UNEXPECTED;
-        return ttp::pcm::copy_format(format_, channel_mask_, format_.wBitsPerSample, out);
+        return protect([&]()->HRESULT{
+            if(format_.nChannels>2&&container_->streams[stream_index_]->codecpar->codec_id==AV_CODEC_ID_COOK)
+                prepare(); // Header-only initialization; no compressed PCM read.
+            return ttp::pcm::copy_format(format_, channel_mask_, format_.wBitsPerSample, out);
+        });
     }
     HRESULT STDMETHODCALLTYPE BufferSize(DWORD *out) override{if(!out)return E_POINTER;*out=65536*format_.nBlockAlign;return opened_?S_OK:E_UNEXPECTED;}
     HRESULT STDMETHODCALLTYPE CodecName(wchar_t **out) override{return text(codec_name_,out);}

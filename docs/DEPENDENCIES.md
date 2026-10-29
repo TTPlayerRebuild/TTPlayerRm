@@ -24,4 +24,19 @@ The configure output and build identity record are preserved in the build direct
 
 RM profile additionally patches `libavformat/rmdec.c` behind `TTP_RM_MP3_ADU` to recognize the original `audio/X-MP3-draft` MIME before the zero-length codec-header return. It restores MP3 ADU/audio classification and millisecond timestamps. This patch is inactive in every other profile. Enabled RM decoders are cook, atrac3, sipr, ra_144, ra_288, aac, ac3, eac3 (shared MSVC declarations) and mp3adu.
 
+The 2026-10-29 RM compatibility profile also applies three checked, idempotent modifications:
+
+- `TTP_RM_LEGACY_COOK`: `legacy_cook.py` restores the original per-core LCG and zero-coefficient sign selection in `cook.c`.
+- `TTP_RM_LEGACY_DNET`: `legacy_dnet.py` restores the original AC-3 LFSR and independent coupled-channel noise in `ac3dec.c` / `ac3dec.h`; E-AC-3 keeps the upstream branch.
+- `TTP_RM_LEGACY_SIPR`: `legacy_sipr.py` and the two `sipr_legacy16k*.h` files restore the original 16 kbps LSF/ISP/LPC transform in `sipr16k.c`. The read-only quantizer tables record their binary provenance; lower-rate synthesis is unchanged.
+
+The 2026.10.29p1 update extends the same SIPR switch to `sipr.c` via
+`sipr_legacylow.h` and `sipr_legacylow_tables.h`: original Hz codebooks,
+ISP/LPC arithmetic, the 5 kbps primed initial ISP, and an SIPR-only 20-tap
+adaptive-pitch interpolation table and accumulation order. Shared
+`ff_b60_sinc` and other codecs are unchanged. All new headers are tracked
+by CMake and the complete source hash; no new dependency is introduced.
+
+All three are enabled only in the RM profile. CMake tracks the patch modules and headers; the complete patched source digest participates in the backend build identity. No old RealCodec binary is required. See the dated Cook, DNET and SIPR documents for original-function evidence, residual differences and validation.
+
 `-SourcePackage` adds a separate corresponding-source ZIP: complete FFmpeg source including compatibility changes, wrapper source, official GNU make source archive, full licenses and scripts. It excludes private tests, samples, build products and caches. The source bundle automatically selects `third_party/ffmpeg`; its complete source digest participates in the build identity so modifications trigger recompilation. Runtime ZIP contents remain DLL + SHA256SUMS only.

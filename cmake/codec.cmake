@@ -1,4 +1,13 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_ffmpeg.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_cook.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_dnet.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_sipr.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacy16k.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacy16k_tables.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacylow.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacylow_tables.h")
 set(TTP_FFMPEG_BASH "" CACHE FILEPATH "Optional Git for Windows bash.exe")
 set(TTP_FFMPEG_BUILD "${CMAKE_CURRENT_BINARY_DIR}/ffmpeg" CACHE PATH "Private FFmpeg source/build cache")
 set(_ffmpeg_bash)

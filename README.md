@@ -1,5 +1,9 @@
 # ttp_rm
 
+2026.10.29p1：[低码率 SIPR 精度恢复](docs/SIPR_NUMERICS_20261029P1.md) · [Cook 结束流程与多声道修复](docs/COOK_END_OF_STREAM_20261029P1.md) · [E-AC-3 隔离验证](docs/EAC3_ISOLATION_20261029P1.md)。
+
+Cook／DNET 补噪、SIPR 16k 算法及损坏尾部状态修复（2026-10-29）：[Cook](docs/COOK_NOISE_PARITY_20261029.md) · [DNET](docs/DNET_PARITY_20261029.md) · [SIPR](docs/SIPR_PARITY_20261029.md)。
+
 最新补全与验收：[2026-10-24](docs/COMPLETION_20261024.md)。
 
 定位取消恢复与缓存补充：[2026-10-24](docs/SEEK_RECOVERY_20261024.md)。

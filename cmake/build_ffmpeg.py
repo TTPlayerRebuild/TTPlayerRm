@@ -77,9 +77,11 @@ def main():
         from legacy_cook import apply as apply_legacy_cook
         from legacy_dnet import apply as apply_legacy_dnet
         from legacy_sipr import apply as apply_legacy_sipr
+        from legacy_rm_packets import apply as apply_legacy_rm_packets
         apply_legacy_cook(source)
         apply_legacy_dnet(source)
         apply_legacy_sipr(source)
+        apply_legacy_rm_packets(source)
     twin=source/'libavcodec/twinvq.c'
     twin_source=twin.read_text(encoding='utf-8')
     marker='    /* get output buffer */\n'
@@ -144,7 +146,7 @@ def main():
         '--disable-swresample','--enable-w32threads','--disable-pthreads','--disable-debug',
         '--disable-iconv','--enable-small','--enable-static','--disable-shared',
         '--enable-decoder='+decoders,'--enable-demuxer='+a.kind,
-        '--extra-cflags=-MT -O1 -Gy -Gw -D_WIN32_WINNT=0x0601'+(' -DTTP_TWINVQ_KEEP_LEADING_FRAMES=1' if a.kind=='vqf' else ' -DTTP_RM_MP3_ADU=1 -DTTP_RM_LEGACY_COOK=1 -DTTP_RM_LEGACY_DNET=1 -DTTP_RM_LEGACY_SIPR=1' if a.kind=='rm' else ''),
+        '--extra-cflags=-MT -O1 -Gy -Gw -D_WIN32_WINNT=0x0601'+(' -DTTP_TWINVQ_KEEP_LEADING_FRAMES=1' if a.kind=='vqf' else ' -DTTP_RM_MP3_ADU=1 -DTTP_RM_LEGACY_COOK=1 -DTTP_RM_LEGACY_DNET=1 -DTTP_RM_LEGACY_SIPR=1 -DTTP_RM_STRICT_PACKETS=1' if a.kind=='rm' else ''),
         '--extra-ldflags=-NODEFAULTLIB:libcmt -DEFAULTLIB:msvcrt']
     source_digest=hashlib.sha256()
     for source_file in sorted(source.rglob('*')):

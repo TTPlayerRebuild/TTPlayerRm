@@ -4,6 +4,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_cook.py"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_dnet.py"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_sipr.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_rm_packets.py"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacy16k.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacy16k_tables.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacylow.h"

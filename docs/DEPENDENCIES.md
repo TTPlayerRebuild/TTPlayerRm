@@ -39,4 +39,20 @@ by CMake and the complete source hash; no new dependency is introduced.
 
 All three are enabled only in the RM profile. CMake tracks the patch modules and headers; the complete patched source digest participates in the backend build identity. No old RealCodec binary is required. See the dated Cook, DNET and SIPR documents for original-function evidence, residual differences and validation.
 
+The 2026.11.05 update restores the original low-rate and 16 kbps SIPR gain
+float stores and the low-rate four-state high-pass filter. With
+`TTP_RM_LEGACY_SIPR`, the private `SiprContext::highpass_filt_mem` has four
+floats; with the macro disabled it retains the upstream two-float layout.
+All backend objects must be rebuilt together. The build identity and CMake
+dependencies cover these changes; no Reader ABI or external dependency changes.
+
+`legacy_rm_packets.py`, enabled only by the RM profile's
+`TTP_RM_STRICT_PACKETS`, checks physical short reads in the INT4, GENR and
+SIPR deinterleavers of `libavformat/rmdec.c`. Incomplete RM audio packets
+return invalid-data instead of letting zero-filled bytes reach the decoder.
+The raw `.ra` path has no RM packet envelope and may end with `RaTC` index
+objects; it retains upstream EOF handling. This is not a complete raw-RA
+footer parser or a claim that every raw-RA truncation is rejected. The patch
+is idempotent and upgrades the first local strict-packet patch in place.
+
 `-SourcePackage` adds a separate corresponding-source ZIP: complete FFmpeg source including compatibility changes, wrapper source, official GNU make source archive, full licenses and scripts. It excludes private tests, samples, build products and caches. The source bundle automatically selects `third_party/ffmpeg`; its complete source digest participates in the build identity so modifications trigger recompilation. Runtime ZIP contents remain DLL + SHA256SUMS only.

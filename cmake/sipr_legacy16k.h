@@ -89,4 +89,20 @@ static void tt_sipr_legacy_lp_decode(float *lp_1st, float *lp_2nd,
     tt_sipr_legacy_isp2lpc(isp_second, lp_2nd);
 }
 
+/* 614ab940: measured energy, predicted energy, and the raw gain each have
+ * an explicit float store. History is newest-first for the 16 kbps mode. */
+static float tt_sipr_legacy_gain(float correction, const float *vector, float *history)
+{
+    double energy = .01f;
+    for (int i = 0; i < 80; ++i)
+        energy += (double)vector[i] * vector[i];
+    float measured = (float)(10.0f * log10(energy / 80));
+    float predicted = (float)((double)history[0] * .8f + 19.0f +
+                              (double)history[1] * .6f);
+    float gain = (float)(pow(10.0, ((double)predicted - measured) * .05) * correction);
+    history[1] = history[0];
+    history[0] = (float)(20.0f * log10((double)correction));
+    return gain * (1.0f / 32768);
+}
+
 #endif

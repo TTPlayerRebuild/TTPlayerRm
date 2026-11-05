@@ -59,6 +59,23 @@ def apply(source: Path) -> None:
 #endif
 ''')
 
+    if 'TTPLAYER_LEGACY_SIPR_16K_GAIN_V1' not in text:
+        old = '''        gain_code = gain_corr_factor *
+            acelp_decode_gain_codef(sqrt(L_SUBFR_16k), fixed_vector,
+                                    19.0 - 15.0/(0.05*M_LN10/M_LN2),
+                                    pred_16k, ctx->energy_history,
+                                    L_SUBFR_16k, 2);
+
+        ctx->energy_history[1] = ctx->energy_history[0];
+        ctx->energy_history[0] = 20.0 * log10f(gain_corr_factor);
+'''
+        replace(old, '''#if defined(TTP_RM_LEGACY_SIPR)
+        /* TTPLAYER_LEGACY_SIPR_16K_GAIN_V1 */
+        gain_code = tt_sipr_legacy_gain(gain_corr_factor, fixed_vector, ctx->energy_history);
+#else
+''' + old + '''#endif
+''')
+
     # Also refresh headers on a subsequent invocation; the build identity must
     # include these files so a compatibility change cannot reuse stale objects.
     for name in ('sipr_legacy16k.h', 'sipr_legacy16k_tables.h',
@@ -114,6 +131,50 @@ def apply(source: Path) -> None:
                               ff_b60_sinc, 6,
                               2 * ((2 + T0_frac)%3 + 1), LP_FILTER_ORDER,
                               SUBFR_SIZE);
+#endif
+''')
+    if 'TTPLAYER_LEGACY_SIPR_LOW_GAIN_V1' not in text:
+        old = '''        gain_code = ff_amr_set_fixed_gain(gain_cb[params->gc_index[i]][1],
+                                          avg_energy, ctx->energy_history,
+                                          34 - 15.0/(0.05*M_LN10/M_LN2),
+                                          pred);
+'''
+        replace(old, '''#if defined(TTP_RM_LEGACY_SIPR)
+        /* TTPLAYER_LEGACY_SIPR_LOW_GAIN_V1 */
+        gain_code = tt_sipr_low_gain(gain_cb[params->gc_index[i]][1],
+                                     fixed_vector, ctx->energy_history);
+#else
+''' + old + '''#endif
+''')
+    if 'TTPLAYER_LEGACY_SIPR_LOW_HIGHPASS_V1' not in text:
+        old = '''    ff_acelp_apply_order_2_transfer_function(out_data, synth,
+                                             (const float[2]) {-1.99997   , 1.000000000},
+                                             (const float[2]) {-1.93307352, 0.935891986},
+                                             0.939805806,
+                                             ctx->highpass_filt_mem,
+                                             frame_size);
+'''
+        replace(old, '''#if defined(TTP_RM_LEGACY_SIPR)
+    /* TTPLAYER_LEGACY_SIPR_LOW_HIGHPASS_V1 */
+    tt_sipr_low_highpass(out_data, synth, ctx->highpass_filt_mem, frame_size);
+#else
+''' + old + '''#endif
+''')
+    if text != original:
+        file.write_text(text, encoding='utf-8')
+
+    # Both sipr.c and sipr16k.c include this private context definition.
+    # The RM build enables the macro for the entire backend, so every object
+    # uses one layout; disabled builds retain the exact upstream layout.
+    file = directory / 'sipr.h'
+    original = file.read_text(encoding='utf-8')
+    text = original
+    if 'TTPLAYER_LEGACY_SIPR_HIGHPASS_STATE_V1' not in text:
+        replace('    float highpass_filt_mem[2];\n', '''#if defined(TTP_RM_LEGACY_SIPR)
+    /* TTPLAYER_LEGACY_SIPR_HIGHPASS_STATE_V1 */
+    float highpass_filt_mem[4];
+#else
+    float highpass_filt_mem[2];
 #endif
 ''')
     if text != original:

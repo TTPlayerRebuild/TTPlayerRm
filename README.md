@@ -1,5 +1,7 @@
 # ttp_rm
 
+2026.11.05：[ATRAC3／Cook／SIPR 补全与旧系统验收](docs/RM_COMPLETION_20261105.md)。修复 RM 短包误判为正常结束、定位取消后查询格式崩溃，进一步恢复 SIPR 数值路径；旧 `.ra` 尾部索引处理保持兼容。
+
 2026.10.29p1：[低码率 SIPR 精度恢复](docs/SIPR_NUMERICS_20261029P1.md) · [Cook 结束流程与多声道修复](docs/COOK_END_OF_STREAM_20261029P1.md) · [E-AC-3 隔离验证](docs/EAC3_ISOLATION_20261029P1.md)。
 
 Cook／DNET 补噪、SIPR 16k 算法及损坏尾部状态修复（2026-10-29）：[Cook](docs/COOK_NOISE_PARITY_20261029.md) · [DNET](docs/DNET_PARITY_20261029.md) · [SIPR](docs/SIPR_PARITY_20261029.md)。

@@ -109,4 +109,44 @@ static void tt_sipr_low_interpolate(float *out, int delay, int fraction)
     }
 }
 
+/* 614a9660 stores the measured and predicted dB energies separately as float.
+ * The original excitation uses PCM units; convert only the final stored gain
+ * to FFmpeg's normalized units. All four predictor entries remain per-reader. */
+static float tt_sipr_low_gain(float correction, const float *vector, float *history)
+{
+    double energy = .01f;
+    for (int i = 0; i < 48; ++i)
+        energy += (double)vector[i] * vector[i];
+    float measured = (float)(10.0 * log10(energy / 48));
+    float predicted = (float)((double)history[3] * .691f + 34.0f +
+                              (double)history[2] * .504f +
+                              (double)history[1] * .334f +
+                              (double)history[0] * .2f);
+    float gain = (float)(pow(10.0, ((double)predicted - measured) * .05) * correction);
+    memmove(history, history + 1, 3 * sizeof(float));
+    history[3] = (float)(20.0 * log10((double)correction));
+    return gain * (1.0f / 32768);
+}
+
+/* 614aa020 keeps the previous two inputs and outputs, storing each output
+ * as float after the five products have been accumulated in the original
+ * order. The algebraically equivalent two-state upstream filter has different
+ * rounding history. mem is SiprContext::highpass_filt_mem, never shared. */
+static void tt_sipr_low_highpass(float *out, const float *in, float *mem, int count)
+{
+    float x1 = mem[0], x2 = mem[1], y1 = mem[2], y2 = mem[3];
+    for (int i = 0; i < count; ++i) {
+        float x = in[i];
+        double sum = (double)x2 * .939805805683136f;
+        sum += (double)y2 * -.9358919858932495f;
+        sum += (double)x * .939805805683136f;
+        sum += (double)x1 * -1.8795833587646484f;
+        sum += (double)y1 * 1.9330735206604004f;
+        float y = (float)sum;
+        out[i] = y;
+        x2 = x1; x1 = x; y2 = y1; y1 = y;
+    }
+    mem[0] = x1; mem[1] = x2; mem[2] = y1; mem[3] = y2;
+}
+
 #endif

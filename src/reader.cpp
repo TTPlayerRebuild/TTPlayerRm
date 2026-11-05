@@ -286,6 +286,11 @@ public:
     HRESULT STDMETHODCALLTYPE Format(WAVEFORMATEX **out) override {
         if(!out)return E_POINTER;*out=nullptr;if(!opened_)return E_UNEXPECTED;
         return protect([&]()->HRESULT{
+            // An interrupted backwards seek can leave the container closed.
+            // Recover the last published position just as Read does before
+            // inspecting the codec header (notably Cook's channel layout).
+            if(resume_pending_)replay_to(resume_position_);
+            require(container_&&stream_index_>=0&&unsigned(stream_index_)<container_->nb_streams,E_UNEXPECTED);
             if(format_.nChannels>2&&container_->streams[stream_index_]->codecpar->codec_id==AV_CODEC_ID_COOK)
                 prepare(); // Header-only initialization; no compressed PCM read.
             return ttp::pcm::copy_format(format_, channel_mask_, format_.wBitsPerSample, out);

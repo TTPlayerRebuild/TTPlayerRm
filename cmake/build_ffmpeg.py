@@ -79,11 +79,15 @@ def main():
         from legacy_sipr import apply as apply_legacy_sipr
         from legacy_rm_packets import apply as apply_legacy_rm_packets
         from legacy_atrac import apply as apply_legacy_atrac
+        from legacy_raw_ra import apply as apply_legacy_raw_ra
+        from legacy_checkpoints import apply as apply_legacy_checkpoints
         apply_legacy_cook(source)
         apply_legacy_dnet(source)
         apply_legacy_sipr(source)
         apply_legacy_rm_packets(source)
         apply_legacy_atrac(source)
+        apply_legacy_raw_ra(source)
+        apply_legacy_checkpoints(source)
     twin=source/'libavcodec/twinvq.c'
     twin_source=twin.read_text(encoding='utf-8')
     marker='    /* get output buffer */\n'

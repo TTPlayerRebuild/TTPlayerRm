@@ -17,7 +17,10 @@ struct Preset { DWORD value;const wchar_t *name; };
 constexpr Preset atrac_presets[]{
     {66150,L"66 kbps（联合立体声）"},{93713,L"94 kbps（联合立体声）"},{104738,L"105 kbps（立体声）"},
     {132300,L"132 kbps（立体声）"},{146081,L"146 kbps（立体声）"},{176400,L"176 kbps（立体声）"},
-    {264600,L"264 kbps（立体声）"},{352800,L"352 kbps（立体声）"}};
+    {264600,L"264 kbps（立体声）"},{352800,L"352 kbps（立体声）"},
+    {atrac_alias_flag|8,L"132 kbps（Surround）"},{atrac_alias_flag|9,L"146 kbps（Surround）"},
+    {atrac_alias_flag|10,L"176 kbps（Surround）"},{atrac_alias_flag|11,L"264 kbps（Surround）"},
+    {atrac_alias_flag|12,L"352 kbps（Surround）"}};
 constexpr Preset cook_presets[]{
     {8,L"6 kbps／8 kHz／单声道"},{0,L"8 kbps／8 kHz／单声道"},
     {1,L"11 kbps／11.025 kHz／单声道"},{2,L"16 kbps／22.05 kHz／单声道"},
@@ -55,12 +58,53 @@ Presets presets(EncoderKind kind) {
 }
 DWORD read_preset(const std::wstring &path,EncoderKind kind) {
     const auto list=presets(kind);const auto value=GetPrivateProfileIntW(list.section,list.key,list.default_value,path.c_str());
+    if(kind==EncoderKind::Atrac3){
+        // Flavor is advisory: external/older clients may still edit Bitrate.
+        // Never let a stale or malformed alias silently change that bitrate.
+        const auto flavor=GetPrivateProfileIntW(list.section,L"Flavor",0xffffffffu,path.c_str());
+        if(flavor>=8&&flavor<=12&&atrac_bitrates[flavor-5]==value)return atrac_alias_flag|flavor;
+        for(const auto bitrate:atrac_bitrates)if(bitrate==value)return value;
+        return list.default_value;
+    }
     // The original 6/14 presets have identical codec parameters and output.
     // Preserve existing flavor 14 configuration, but show one meaningful item.
     if(kind==EncoderKind::Cook&&value==14)return value;
     for(size_t i=0;i<list.count;++i)if(list.items[i].value==value)return value;return list.default_value;
 }
 struct DialogState { std::wstring path;EncoderKind kind;DWORD preset; };
+HRESULT write_preset(const std::wstring &path,EncoderKind kind,DWORD value) {
+    return protect([&]()->HRESULT{
+        const auto list=presets(kind);
+        if(kind!=EncoderKind::Atrac3){
+            auto text=std::to_wstring(value);
+            if(WritePrivateProfileStringW(list.section,list.key,text.c_str(),path.c_str()))return S_OK;
+            const auto error=GetLastError();return error?HRESULT_FROM_WIN32(error):E_FAIL;
+        }
+        // Bitrate and Flavor form one setting. Replace the section in a single
+        // profile API operation so a failed second key write cannot leave an
+        // active alias behind an error/cancelled dialog. Keep unrelated keys.
+        std::vector<wchar_t> old(1024);
+        for(;;){
+            auto n=GetPrivateProfileSectionW(list.section,old.data(),DWORD(old.size()),path.c_str());
+            if(n<old.size()-2)break;
+            require(old.size()<32768,HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER));old.resize(old.size()*2);
+        }
+        std::wstring section;
+        for(const wchar_t *entry=old.data();*entry;entry+=wcslen(entry)+1){
+            std::wstring key(entry,wcschr(entry,L'=')?size_t(wcschr(entry,L'=')-entry):wcslen(entry));
+            const auto first=key.find_first_not_of(L" \t"),last=key.find_last_not_of(L" \t");
+            if(first!=std::wstring::npos)key=key.substr(first,last-first+1);
+            if(!_wcsicmp(key.c_str(),L"Bitrate")||!_wcsicmp(key.c_str(),L"Flavor"))continue;
+            section+=entry;section.push_back(0);
+        }
+        section+=L"Bitrate="+std::to_wstring(atrac_preset_bitrate(value));section.push_back(0);
+        section+=L"Flavor="+std::to_wstring(atrac_preset_flavor(value));section.push_back(0);
+        if(!WritePrivateProfileSectionW(list.section,section.c_str(),path.c_str())){
+            const auto error=GetLastError();return error?HRESULT_FROM_WIN32(error):E_FAIL;
+        }
+        return S_OK;
+    });
+}
 void center(HWND window,HWND owner) {
     RECT area{};MONITORINFO monitor{sizeof(monitor)};
     if(GetMonitorInfoW(MonitorFromWindow(owner?owner:window,MONITOR_DEFAULTTONEAREST),&monitor))area=monitor.rcWork;
@@ -89,8 +133,7 @@ INT_PTR CALLBACK dialog(HWND w,UINT message,WPARAM wp,LPARAM lp) {
     if(message==WM_COMMAND&&LOWORD(wp)==IDCANCEL){EndDialog(w,IDCANCEL);return TRUE;}
     if(message==WM_COMMAND&&LOWORD(wp)==IDOK&&state){
         const auto list=presets(state->kind);auto index=SendDlgItemMessageW(w,1001,CB_GETCURSEL,0,0);if(index<0||size_t(index)>=list.count)return TRUE;
-        wchar_t text[16]{};_snwprintf_s(text,_TRUNCATE,L"%lu",list.items[index].value);
-        if(!WritePrivateProfileStringW(list.section,list.key,text,state->path.c_str())){
+        if(FAILED(write_preset(state->path,state->kind,list.items[index].value))){
             MessageBoxW(w,L"无法保存编码设置，请检查设置目录是否可写。",L"RealAudio 编码设置",MB_OK|MB_ICONERROR);return TRUE;
         }
         EndDialog(w,IDOK);return TRUE;
@@ -99,7 +142,7 @@ INT_PTR CALLBACK dialog(HWND w,UINT message,WPARAM wp,LPARAM lp) {
 }
 }
 DWORD atrac_bitrate() {
-    return encoder_preset(EncoderKind::Atrac3);
+    return atrac_preset_bitrate(encoder_preset(EncoderKind::Atrac3));
 }
 DWORD encoder_preset(EncoderKind kind) {return read_preset(settings_path(),kind);}
 HRESULT configure_encoder(HWND parent,EncoderKind kind) {

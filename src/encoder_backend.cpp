@@ -6,9 +6,10 @@
 namespace ttp::rm {
 namespace {
 class AtracBackend final:public EncoderBackend {
+    DWORD flavor_;
     Atrac3Encoder core_;
 public:
-    explicit AtracBackend(DWORD preset):core_(preset,2){}
+    explicit AtracBackend(DWORD preset):flavor_(atrac_preset_flavor(preset)),core_(atrac_preset_bitrate(preset),2){}
     bool Encode(const int16_t *p,size_t n,std::vector<uint8_t>&b)noexcept override{return core_.Encode(p,n,b);}
     bool Finish(std::vector<uint8_t>&b)noexcept override{return core_.Finish(b);}
     uint64_t InputFrames()const noexcept override{return core_.InputFrames();}
@@ -16,7 +17,7 @@ public:
     RmAudioSpec Specification()const override {
         RmAudioSpec spec{fourcc('a','t','r','c'),44100,2,core_.Bitrate(),core_.FrameBytes(),1024,0,{}};
         spec.extra={0,0,0,4,8,0,BYTE(core_.DelaySamples()>>8),BYTE(core_.DelaySamples()),0,BYTE(core_.CodingMode())};
-        for(DWORD i=0;i<8;++i)if(atrac_bitrates[i]==spec.bitrate)spec.flavor=i;
+        spec.flavor=flavor_;
         return spec;
     }
 };

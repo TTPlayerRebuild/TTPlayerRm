@@ -14,13 +14,15 @@ Sources: [FFmpeg official release archive](https://ffmpeg.org/releases/ffmpeg-9.
 
 Build sources are downloaded and digest-checked by `cmake/build_ffmpeg.py` and CMake FetchContent; they are not vendored. The normal cache is this project's `build/ffmpeg`, not the private test tree. GNU make is bootstrapped from source with MSVC and is never linked into or distributed with the plugin. Git for Windows (Bash), Python 3.12 or newer, CMake 3.24 or newer, and MSVC Win32 build tools are required. Python 3.14 and VS 2026 were used for local verification.
 
+Manual linking of the YY-Thunks OBJ also requires its DLL entry wrapper. The x86 target sets `/ENTRY:DllMainCRTStartupForYY_Thunks` and `/alternatename:_YY_ThunksOriginalDllMainCRTStartup@12=__DllMainCRTStartup@12`, as specified by the fixed dependency's Readme. This restores XP dynamically loaded DLL TLS allocation and cleanup before forwarding to the real CRT entry. Merely linking the OBJ can leave the plugin sharing an incorrect TLS index with a YY-enabled host and crash on process exit. The 2026.11.06p1 correction was first verified by relinking unchanged codec objects and repeating the failing load-only probe; it is not a codec algorithm or test-helper workaround.
+
 The FFmpeg profile disables autodetection, network protocols, programs, filters, devices, external libraries, assembly and swscale. The RM profile enables static libswresample for encoder input conversion; other profiles retain their existing setting. GPL, nonfree, and version3 components remain disabled; generated `config.h` records `LGPL version 2.1 or later`. Only the selected container and decoders are enabled. The standalone source, pinned dependency locations and complete build recipes allow rebuilding/relinking against a modified LGPL backend; binary redistributors must retain the applicable license and source/relink provisions.
 
 ## Independent ATRAC3 encoder
 
 `cmake/atrac3_encoder.cmake` fetches the pinned [AtracDEnc source](https://github.com/dcherednik/atracdenc/tree/cb170709f836cb43dc0312455188c791159d81dc), checks its archive digest, and builds only its LGPL-2.1 ATRAC3 core and BSD-3-Clause KissFFT. No original RealCodec DLL, Media Foundation, libsndfile or proprietary encoder is linked or loaded. Full license texts and credits are in `LICENSES/AtracDEnc-*` and `LICENSES/KissFFT-BSD-3-Clause.txt`.
 
-`prepare_atrac3.py` derives a separate build tree: it removes unused ATRAC1/ATRAC3+ template instances, makes the shared ATH table immutable to avoid concurrent-constructor races, and converts internal fatal aborts into exceptions caught by the plugin wrapper. It checks exact pinned patch context instead of silently applying a partial patch. The wrapper adds the required initial padding to match RM's 2190-sample delay, preserves the caller's floating-point rounding mode, bounds buffering, and flushes the final partial frame. These are maintenance changes, not a claim that this encoder reproduces the original RealAudio psychoacoustic decisions or its five extra Surround presets.
+`prepare_atrac3.py` derives a separate build tree: it removes unused ATRAC1/ATRAC3+ template instances, makes the shared ATH table immutable to avoid concurrent-constructor races, and converts internal fatal aborts into exceptions caught by the plugin wrapper. It checks exact pinned patch context instead of silently applying a partial patch. The wrapper adds the required initial padding to match RM's 2190-sample delay, preserves the caller's floating-point rounding mode, bounds buffering, and flushes the final partial frame. The 2026.11.06p1 update also bounds ordinary and tonal allocation independently per coded channel using the original bitrate-dependent bandwidths. Dynamic comparisons establish that the five original Surround flavors are aliases of five base flavors; they are now restored. This does not claim bit-identical psychoacoustic decisions.
 
 The corresponding-source ZIP contains the complete fixed AtracDEnc tree in `third_party/atracdenc`, not just the copied build subset. CMake automatically selects that bundled source; users can modify it and rebuild the statically linked LGPL core. The runtime ZIP remains DLL + SHA256SUMS only.
 
@@ -61,13 +63,24 @@ dependencies cover these changes; no Reader ABI or external dependency changes.
 `TTP_RM_STRICT_PACKETS`, checks physical short reads in the INT4, GENR and
 SIPR deinterleavers of `libavformat/rmdec.c`. Incomplete RM audio packets
 return invalid-data instead of letting zero-filled bytes reach the decoder.
-The raw `.ra` path has no RM packet envelope and may end with `RaTC` index
-objects; it retains upstream EOF handling. This is not a complete raw-RA
-footer parser or a claim that every raw-RA truncation is rejected. The patch
-is idempotent and upgrades the first local strict-packet patch in place.
+The raw `.ra` path has no RM packet envelope. The 2026.11.06p1
+`legacy_raw_ra.py` patch bounds known-length RA4 audio using its separate
+audio-size and chunk-size fields. `RaTC` is a FourCC/offset chunk directory,
+not a time index. Optional directory corruption or ordinary optional I/O
+failure does not truncate declared audio; restoring the actual audio stream
+position is mandatory, and cancellation remains an error. Known-length
+physical truncation and incomplete interleave groups are rejected. Unknown
+lengths and other old header variants retain their previous path. The patches
+are idempotent; this is not a claim that every raw-RA truncation is covered.
 
 `-SourcePackage` adds a separate corresponding-source ZIP: complete FFmpeg source including compatibility changes, wrapper source, official GNU make source archive, full licenses and scripts. It excludes private tests, samples, build products and caches. The source bundle automatically selects `third_party/ffmpeg`; its complete source digest participates in the build identity so modifications trigger recompilation. Runtime ZIP contents remain DLL + SHA256SUMS only.
 
 `legacy_atrac.py`, behind RM-only `TTP_RM_LEGACY_ATRAC`, accepts the original meaningful ATRAC3 priming range `0..32767` in the 10/12-byte RM headers instead of accepting only 2190. Other header checks are preserved. The original sign-extends this field; values with the high bit set lead to an unusable huge discard count and remain rejected rather than reproducing that behavior.
 
-The encoder update also extends `legacy_sipr.py` under the existing RM-only switch. In 5k mode, initialization retains the original hidden startup frame's observed AGC state, float bits `0x3f1119fe`, alongside the already-restored ISP history, without reintroducing its 240-sample latency. In 16k mode, the second-subframe pitch 62/63 fallback uses the original previous pitch + 1 and zero fractional phase. These bit patterns are not rejected as invalid. All ordinary 0..61 paths remain unchanged; the native encoder searches that ordinary range. Both patches upgrade an already-patched source tree idempotently and leave builds without the compatibility macro unchanged.
+The encoder update also extends `legacy_sipr.py` under the existing RM-only switch. In 5k mode, initialization retains the original hidden startup frame's AGC/ISP/history state without reintroducing its 240-sample latency in the ordinary Reader. The 2026.11.06p1 version synthesizes that hidden frame instead of retaining only the former AGC constant `0x3f1119fe`. In 16k mode, the second-subframe pitch 62/63 fallback uses the original previous pitch + 1 and zero fractional phase. These bit patterns are not rejected as invalid. All ordinary 0..61 paths remain unchanged; the native encoder searches that ordinary range. The patches upgrade an already-patched source tree idempotently and leave builds without the compatibility macro unchanged.
+
+The 2026.11.06p1 RM profile adds `sipr_legacyplc.h` and a typed private context extension for four-mode erasure concealment, ordered scalar synthesis and AGC arithmetic. The public optional packet API is implemented in `src/sipr_decoder.cpp` and `src/sipr_packet.cpp`; ordinary Reader packets do not enable PLC. Excessive 16k erasure pitch is rejected before an out-of-bounds history read. The source-level SIPR context contract is checked by the encoder and decoder build; all backend objects must be rebuilt together.
+
+`legacy_checkpoints.py` installs typed Cook, ATRAC3, SIPR and RM-demux state helpers. The helpers validate codec configuration, extradata, sizes and numeric state; they do not serialize pointers or copy complete private codec objects. Generic packet queues must be empty, and only eligible complete GENR/INT4/SIPR matrices are cached. Int0/multiframe packets keep linear replay. Reader checkpoints are limited to 8 MiB/256 entries per instance, separate from the existing 4 MiB PCM history. They are process-local and never persisted. All helper headers and patch scripts participate in CMake dependencies and the complete source digest.
+
+Cook encoding now applies the original three-biquad input filter before attack analysis and MDCT. Cook Reader publication holds one decoded block until the next successful block, matching the original host's non-flushing EOF path. The encoder's required tail packets remain intact. See [the 2026.11.06p1 report](RM_REMAINING_DIFFERENCES_20261106P1.md) for evidence and remaining numerical differences.

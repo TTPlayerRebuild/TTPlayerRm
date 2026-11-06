@@ -11,8 +11,6 @@ def apply(source: Path) -> None:
     path = Path(source) / 'libavcodec/atrac3.c'
     text = path.read_text(encoding='utf-8')
     marker = 'TTPLAYER_LEGACY_ATRAC_PRIMING_V1'
-    if marker in text:
-        return
     old = '''    if (delay != 0x88E) {
         av_log(avctx, AV_LOG_ERROR, "Unknown amount of delay %x != 0x88E.\\n",
                delay);
@@ -36,6 +34,16 @@ def apply(source: Path) -> None:
         return AVERROR_INVALIDDATA;
     }
 '''
-    if text.count(old) != 1:
-        raise RuntimeError('Pinned ATRAC priming precondition changed')
-    path.write_text(text.replace(old, new, 1), encoding='utf-8')
+    if marker not in text:
+        if text.count(old) != 1:
+            raise RuntimeError('Pinned ATRAC priming precondition changed')
+        text = text.replace(old, new, 1)
+    include = '#include "ttp_atrac_checkpoint.h"'
+    if include not in text:
+        text += '\n#if defined(TTP_RM_LEGACY_ATRAC)\n' + include + '\n#endif\n'
+    header = Path(__file__).with_name('atrac_checkpoint.h').read_bytes()
+    destination = path.with_name('ttp_atrac_checkpoint.h')
+    if not destination.exists() or destination.read_bytes() != header:
+        destination.write_bytes(header)
+    if path.read_text(encoding='utf-8') != text:
+        path.write_text(text, encoding='utf-8')

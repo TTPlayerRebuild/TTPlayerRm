@@ -29,7 +29,32 @@ def prepare(source, output):
                         'template\nclass TScaler<NAtrac1::TAtrac1Data>;\n',
                         'template\nclass TScaler<NAt3p::TScaleTable>;\n']:
                 text = replace_once(text, old, '')
+        if name == 'atrac/at3/atrac3.h':
+            text = replace_once(text, '    const uint32_t BfuIdxConst;\n',
+                '    const uint32_t BfuIdxConst;\n'
+                '    // RealAudio preset caps, in M/S order for joint stereo.\n'
+                '    uint16_t MaxBfus[2] = {32, 32};\n')
+        if name == 'atrac/at3/atrac3_bitstream.h':
+            text = replace_once(text, '        float Loudness;\n',
+                '        float Loudness;\n'
+                '        uint16_t MaxBfus = TAtrac3Data::MaxBfus;\n')
+        if name == 'atrac3denc.cpp':
+            text = replace_once(text, '#include <limits>\n', '#include <limits>\n#include <stdexcept>\n')
+            # Limit the spectrum before tonal extraction as well as ordinary
+            # quantization. A writer-only BFU cap would leave tonal escape data
+            # above the preset bandwidth, notably on the joint side channel.
+            text = replace_once(text, '            vector<float> mdctEnergy(specs.size(), 0.0f);\n',
+                '            sce->MaxBfus = Params.MaxBfus[channel];\n'
+                '            if (sce->MaxBfus < 1 || sce->MaxBfus > TAtrac3Data::MaxBfus)\n'
+                '                throw std::runtime_error("invalid ATRAC3 bandwidth limit");\n'
+                '            std::fill(specs.begin() + TAtrac3Data::BlockSizeTab[sce->MaxBfus],\n'
+                '                      specs.end(), 0.0f);\n\n'
+                '            vector<float> mdctEnergy(specs.size(), 0.0f);\n')
         if name == 'atrac/at3/atrac3_bitstream.cpp':
+            text = replace_once(text,
+                '            ctx->NumBfu = CalcInitialNumBfu(ctx->BfuIdxConst, ctx->TargetBits);\n',
+                '            ctx->NumBfu = std::min<uint16_t>(ctx->Sce->MaxBfus,\n'
+                '                CalcInitialNumBfu(ctx->BfuIdxConst, ctx->TargetBits));\n')
             # The upstream lazily mutable ATH vector races between independent
             # encoder constructors. Build this immutable table at module startup.
             first = text.index('    ATH.reserve(TAtrac3Data::MaxBfus);')

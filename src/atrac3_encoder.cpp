@@ -11,6 +11,23 @@ namespace ttp::rm {
 namespace {
 constexpr uint32_t kBitrates[] = {66150, 93713, 104738, 132300, 146081, 176400, 264600, 352800};
 constexpr uint32_t kFrameBytes[] = {192, 272, 304, 384, 424, 512, 768, 1024};
+// RealAudio's per-coding-channel bandwidth policy. Joint stereo operates in
+// M/S order; independent stereo uses L/R. The five Surround names use the
+// same parameters as the corresponding 132..352 kbps stereo presets.
+constexpr uint32_t kBandwidthHz[][2] = {
+    {12400, 3100}, {15100, 7500}, {13700, 13700}, {16500, 16500},
+    {16500, 16500}, {19200, 19200}, {22000, 22000}, {22000, 22000}
+};
+uint16_t BandwidthBfus(uint32_t hz) {
+    // Original conversion: floor(hz * 2048 / 44100), then the first BFU
+    // whose exclusive upper spectral boundary is >= that integer index.
+    using NAtracDEnc::NAtrac3::TAtrac3Data;
+    const uint32_t coefficient = hz * 2048 / 44100;
+    uint16_t count = 1;
+    while (count < TAtrac3Data::MaxBfus && TAtrac3Data::BlockSizeTab[count] < coefficient)
+        ++count;
+    return count;
+}
 // AtracDEnc's QMF/MDCT delay is 1162. Prefixing 1028 silent samples produces
 // the standard RealAudio ATRAC3 delay 2190 without discarding source samples.
 constexpr size_t kPrefixFrames = 1028;
@@ -50,6 +67,8 @@ struct Atrac3Encoder::Impl {
           coding_mode(mode < 2 ? 0x12u : 2u) {
         ScopedRounding rounding;
         NAtracDEnc::NAtrac3::TAtrac3EncoderSettings settings(bitrate, false, false, 2, 0);
+        settings.MaxBfus[0] = BandwidthBfus(kBandwidthHz[mode][0]);
+        settings.MaxBfus[1] = BandwidthBfus(kBandwidthHz[mode][1]);
         encoder.reset(new NAtracDEnc::TAtrac3Encoder(
             TCompressedOutputPtr(new Output(*this)), std::move(settings)));
         process = encoder->GetLambda();

@@ -95,7 +95,7 @@ def apply(source: Path) -> None:
     # Also refresh headers on a subsequent invocation; the build identity must
     # include these files so a compatibility change cannot reuse stale objects.
     for name in ('sipr_legacy16k.h', 'sipr_legacy16k_tables.h',
-                 'sipr_legacylow.h', 'sipr_legacylow_tables.h'):
+                 'sipr_legacylow.h', 'sipr_legacylow_tables.h', 'sipr_legacyplc.h'):
         contents = Path(__file__).with_name(name).read_bytes()
         destination = directory / name
         if not destination.exists() or destination.read_bytes() != contents:
@@ -212,3 +212,99 @@ def apply(source: Path) -> None:
 ''')
     if text != original:
         file.write_text(text, encoding='utf-8')
+
+    _apply_plc(source)
+    _apply_numerics(source)
+
+
+def _apply_plc(source: Path) -> None:
+ d=Path(source)/'libavcodec'
+ def edit(name,changes):
+  p=d/name;t=p.read_text()
+  for old,new in changes:
+   if new in t:continue
+   if t.count(old)!=1: raise RuntimeError('Pinned SIPR PLC compatibility precondition changed: '+name+': '+old[:80])
+   t=t.replace(old,new)
+  p.write_text(t)
+ edit('sipr.h', [('    void (*decode_frame)', '''#if defined(TTP_RM_LEGACY_SIPR)
+    /* TTPLAYER_LEGACY_SIPR_PLC_STATE_V1: zero leaves Reader unchanged. */
+    int plc_enabled, plc_error;
+    uint32_t plc_seed;
+    float plc_hz[16], plc_pitch3, plc_pitch_step, plc_pitch_running;
+    float plc_pitch_gain, plc_code_gain, plc_gain_step;
+#endif
+    void (*decode_frame)''')])
+ edit('sipr.c', [('#include "sipr_legacylow.h"','#include "sipr_legacylow.h"\n#include "sipr_legacyplc.h"'),
+ ('    tt_sipr_low_decode_isp(lsf_new, ctx->lsf_history, params->vq_indexes);','''    if(ctx->plc_enabled) tt_sipr_plc_spectrum(ctx, lsf_new, params->vq_indexes);
+    else tt_sipr_low_decode_isp(lsf_new, ctx->lsf_history, params->vq_indexes);'''),
+ ('        if (i == 0 || (i == 2 && ctx->mode == MODE_5k0))','''#if defined(TTP_RM_LEGACY_SIPR)
+        if(ctx->plc_enabled) tt_sipr_plc_pitch(ctx, i, &T0, &T0_frac);
+#endif
+        if (i == 0 || (i == 2 && ctx->mode == MODE_5k0))'''),
+ ('        decode_fixed_sparse(&fixed_cb, params->fc_indexes[i], ctx->mode,','''#if defined(TTP_RM_LEGACY_SIPR)
+        if(ctx->plc_error) for(int k=0;k<(ctx->mode==MODE_5k0?1:3);++k)
+            params->fc_indexes[i][k]=tt_sipr_plc_random(ctx);
+#endif
+        decode_fixed_sparse(&fixed_cb, params->fc_indexes[i], ctx->mode,'''),
+ ('''        gain_code = tt_sipr_low_gain(gain_cb[params->gc_index[i]][1],
+                                     fixed_vector, ctx->energy_history);''','''        if(ctx->plc_enabled) {
+            gain_code = tt_sipr_plc_gain(ctx, params->gc_index[i], fixed_vector, &pitch_gain, i);
+            ctx->past_pitch_gain = pitch_gain;
+        } else gain_code = tt_sipr_low_gain(gain_cb[params->gc_index[i]][1],
+                                     fixed_vector, ctx->energy_history);''')])
+ edit('sipr16k.c', [
+ ('''    tt_sipr_legacy_decode_isp(ctx->lsf_history, lsp_new, params->vq_indexes,
+                             params->ma_pred_switch);''', '''    if(ctx->plc_enabled) tt_sipr_legacy_decode_isp_ex(ctx->lsf_history, lsp_new, params->vq_indexes,
+                             params->ma_pred_switch,ctx->plc_hz,ctx->plc_error);
+    else tt_sipr_legacy_decode_isp(ctx->lsf_history, lsp_new, params->vq_indexes,
+                             params->ma_pred_switch);'''),
+ ('''        pitch_fac = gain_pitch_cb_16k[params->gp_index[i]];
+        f.pitch_fac''', '''        pitch_fac = gain_pitch_cb_16k[params->gp_index[i]];
+#if defined(TTP_RM_LEGACY_SIPR)
+        if(ctx->plc_enabled) {
+            if(ctx->plc_error) {
+                pitch_delay_3x=3*(ctx->pitch_lag_prev+1);
+                pitch_fac=ctx->plc_pitch_gain*.95f;
+                for(int k=0;k<5;++k){
+                    ctx->plc_seed=ctx->plc_seed*214013u+2531011u;
+                    unsigned pair=(ctx->plc_seed>>16)&511;
+                    params->fc_indexes[i][2*k]=pair&15;
+                    params->fc_indexes[i][2*k+1]=(pair>>4)&31;
+                }
+            }
+            ctx->plc_pitch_gain=FFMIN(pitch_fac,1);
+        }
+#endif
+        f.pitch_fac'''),
+ ('''        gain_code = tt_sipr_legacy_gain(gain_corr_factor, fixed_vector, ctx->energy_history);''', '''        if(ctx->plc_error) {
+            ctx->plc_code_gain*=.8f;
+            gain_code=ctx->plc_code_gain*(1.0f/32768);
+            float energy=(float)(((double)ctx->energy_history[0]+ctx->energy_history[1])*.5f-4);
+            ctx->energy_history[1]=ctx->energy_history[0];
+            ctx->energy_history[0]=FFMAX(energy,-14);
+        } else {
+            gain_code = tt_sipr_legacy_gain(gain_corr_factor, fixed_vector, ctx->energy_history);
+            if(ctx->plc_enabled)ctx->plc_code_gain=gain_code*32768;
+        }''')])
+
+
+def _apply_numerics(source: Path) -> None:
+    file = Path(source) / 'libavcodec/sipr.c'
+    text = file.read_text(encoding='utf-8')
+    if 'TTPLAYER_LEGACY_SIPR_NUMERICS_V2' in text:
+        return
+    old = '#include "sipr_legacyplc.h"\n#endif'
+    assert text.count(old) == 1
+    text = text.replace(old, old + '\n' + '/* TTPLAYER_LEGACY_SIPR_NUMERICS_V2 */\n#if defined(TTP_RM_LEGACY_SIPR)\n#define TT_SIPR_SYNTH tt_sipr_low_synth\n#else\n#define TT_SIPR_SYNTH ff_celp_lp_synthesis_filterf\n#endif\n', 1)
+    # Preserve the impulse-response helper, which follows a different routine.
+    for argument in ('pole_out', 'ctx->postfilter_syn5k0 + LP_FILTER_ORDER + i*SUBFR_SIZE', 'synth + i*SUBFR_SIZE'):
+        old = 'ff_celp_lp_synthesis_filterf(' + argument
+        assert text.count(old) == 1
+        text = text.replace(old, 'TT_SIPR_SYNTH(' + argument, 1)
+    old = '            ff_adaptive_gain_control(&synth[i * SUBFR_SIZE],\n                                     &synth[i * SUBFR_SIZE], energy,\n                                     SUBFR_SIZE, 0.9, &ctx->postfilter_agc);\n'
+    assert text.count(old) == 1
+    text = text.replace(old, '#if defined(TTP_RM_LEGACY_SIPR)\n            tt_sipr_low_agc(&synth[i * SUBFR_SIZE],\n                           ctx->postfilter_syn5k0 + LP_FILTER_ORDER + i*SUBFR_SIZE,\n                           SUBFR_SIZE, &ctx->postfilter_agc);\n#else\n' + old + '#endif\n', 1)
+    old = '    av_channel_layout_uninit(&avctx->ch_layout);'
+    assert text.count(old) == 1
+    text = text.replace(old, '#if defined(TTP_RM_LEGACY_SIPR)\n    if (ctx->mode == MODE_5k0) {\n        /* Advance the actual hidden startup frame, retaining its tiny LPC\n         * state and AGC. Compensated file playback still emits no extra PCM. */\n        SiprParameters hidden = {0};\n        float discarded[240];\n        ctx->plc_enabled = 1;\n        ctx->plc_error = 2;\n        ctx->plc_seed = 21845;\n        ctx->plc_pitch3 = 180;\n        memcpy(ctx->plc_hz, low_mean, sizeof(low_mean));\n        tt_sipr_low_init_isp(ctx->lsp_history, 0);\n        ctx->postfilter_agc = 1;\n        ctx->decode_frame(ctx, &hidden, discarded);\n        ctx->plc_enabled = 0;\n        ctx->plc_error = 0;\n    }\n#endif\n' + old, 1)
+    file.write_text(text, encoding='utf-8')

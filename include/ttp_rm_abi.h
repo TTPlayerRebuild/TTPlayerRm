@@ -32,6 +32,31 @@ struct Buffer : IUnknown {
     virtual HRESULT STDMETHODCALLTYPE Capacity(DWORD *) = 0;
     virtual HRESULT STDMETHODCALLTYPE Data(BYTE **, DWORD *) = 0;
 };
+// Optional rebuilt extension, not an original RA DLL export/vtable. Obtain
+// the factory via AddIn::QueryInterface; the original Enum order is unchanged.
+inline constexpr GUID iid_sipr_packet_factory{
+    0xd7b64785,0xc41b,0x49b3,{0xab,0x0f,0xe7,0x6a,0x3a,0x89,0x72,0x11}};
+inline constexpr GUID iid_sipr_packet_decoder{
+    0xc01a659c,0x878c,0x4aac,{0x91,0xc3,0x89,0x65,0x9e,0x0c,0x42,0x27}};
+struct SiprPacketFormat {
+    DWORD size,sample_rate,packet_bytes,packet_samples,core_samples,delay_samples;
+};
+struct SiprPacketDecoder : IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE Format(SiprPacketFormat *) = 0;
+    // Packed codec bits, at most 32 core frames per call; validity is LSB first
+    // per core frame (two per packet at 5/6.5k). Unused trailing bits are ignored.
+    // Output PCM16 mono, capacity >= complete_core_frames*core_samples*2.
+    // Validation/capacity errors consume nothing. A synthesis or output
+    // publication (final SetLength) failure requires
+    // Reset; no partial output is published. Calls must be serialized.
+    virtual HRESULT STDMETHODCALLTYPE Decode(const BYTE *,DWORD bytes,DWORD validity,Buffer *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Reset() = 0;
+};
+struct SiprPacketDecoderFactory : IUnknown {
+    // bitrate=5000/6500/8500/16000; flags bit0 retains original 5k delay.
+    // No other flags are accepted. The caller releases the returned interface.
+    virtual HRESULT STDMETHODCALLTYPE Create(DWORD bitrate,DWORD flags,void **) = 0;
+};
 struct Reader : IUnknown {
     virtual HRESULT STDMETHODCALLTYPE Open(IStream *, DWORD flags) = 0;
     virtual HRESULT STDMETHODCALLTYPE Capabilities(DWORD *) = 0;

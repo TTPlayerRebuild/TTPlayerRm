@@ -9,6 +9,8 @@ namespace ttp::rm {
 // Output appends complete, UNSCRAMBLED ATRAC3 frames; the RM muxer scrambles them.
 // Supported exact bitrates: 66150, 93713, 104738, 132300, 146081, 176400,
 // 264600, 352800. This does not reproduce Sony/Real encoder decisions.
+// Preserves the original preset's per-channel spectral/tonal bandwidth limits;
+// the low-rate joint modes apply different limits to the mid and side signals.
 class Atrac3Encoder final {
 public:
     explicit Atrac3Encoder(uint32_t bitrate, uint32_t channels = 2) noexcept;

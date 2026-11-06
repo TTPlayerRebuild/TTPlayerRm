@@ -149,4 +149,34 @@ static void tt_sipr_low_highpass(float *out, const float *in, float *mem, int co
     mem[0] = x1; mem[1] = x2; mem[2] = y1; mem[3] = y2;
 }
 
+
+/* Original 614aa210 adds 1e-9f in PCM units before each ordered LPC sum.
+ * Even a PCM-silent startup frame therefore has nonzero filter state.
+ * 614ace20 keeps its AGC accumulator extended until the subframe ends;
+ * 614b0220 computes the inverse root with five Newton steps. */
+static void tt_sipr_low_synth(float *out,const float *a,const float *in,int count,int order)
+{
+    for(int n=0;n<count;++n){
+        double sum=(double)in[n]+(double)1.e-9f/32768;
+        for(int j=1;j<=order;++j)sum-=(double)a[j-1]*out[n-j];
+        out[n]=(float)sum;
+    }
+}
+static void tt_sipr_low_agc(float *out,const float *speech,int count,float *memory)
+{
+    double e=0,reference=0;
+    for(int i=0;i<count;++i){e+=(double)out[i]*out[i];reference+=(double)speech[i]*speech[i];}
+    if(e==0){*memory=0;return;}
+    float increment=0;
+    if(reference!=0){
+        double ratio=e/reference;int exponent;frexp(ratio,&exponent);
+        double root=ldexp(1.0,-(exponent>>1));
+        for(int i=0;i<5;++i)root*=1.5-.5*ratio*root*root;
+        increment=(float)((1.0-.9f)*root);
+    }
+    double gain=*memory;
+    for(int i=0;i<count;++i){gain=gain*.9f+increment;out[i]=(float)(gain*out[i]);}
+    *memory=(float)gain;
+}
+
 #endif

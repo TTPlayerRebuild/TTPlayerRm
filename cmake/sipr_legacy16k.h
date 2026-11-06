@@ -17,11 +17,12 @@ static void tt_sipr_legacy_spacing(float *f, int count)
     }
 }
 
-static void tt_sipr_legacy_decode_isp(float *history, double *isp, const int *index, int pred)
+static void tt_sipr_legacy_decode_isp_ex(float *history, double *isp, const int *index, int pred, float *previous, int bad)
 {
     const float *cb[] = { legacy_cb1, legacy_cb2, legacy_cb3, legacy_cb4, legacy_cb5 };
     float q[16], hz[16], transformed[16];
     float weight = pred ? 0.5f : 0.12f;
+    if (!bad) {
     for (int i = 0; i < 4; ++i)
         memcpy(q + 3*i, cb[i] + 3*index[i], 3*sizeof(float));
     memcpy(q + 12, cb[4] + 4*index[4], 4*sizeof(float));
@@ -37,11 +38,19 @@ static void tt_sipr_legacy_decode_isp(float *history, double *isp, const int *in
             sum += (double)hz[j] * legacy_matrix16[i*16+j];
         transformed[i] = sum;
     }
+    } else {
+        memset(history,0,16*sizeof(float));
+        for(int i=0;i<16;++i) transformed[i]=(float)((double)legacy_mean16[i]*(1.0f-.95f)+(double)previous[i]*.95f);
+    }
     tt_sipr_legacy_spacing(transformed, 15);
+    if(previous)memcpy(previous,transformed,16*sizeof(float));
     for (int i = 0; i < 15; ++i)
         isp[i] = (float)cos((double)transformed[i] * 0.0003926991f);
     isp[15] = av_clipf((float)cos(((double)transformed[15] - 5300.0) * 0.000785398163375), -0.8f, 0.5f);
 }
+
+static void tt_sipr_legacy_decode_isp(float *history, double *isp, const int *index, int pred)
+{ tt_sipr_legacy_decode_isp_ex(history,isp,index,pred,0,0); }
 
 static void tt_sipr_legacy_poly(const float *isp, float *p, int n)
 {

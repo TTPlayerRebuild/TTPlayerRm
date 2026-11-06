@@ -6,11 +6,25 @@ RealCodec DLL, change transform/quantizer tables, or trim decoded audio.
 from pathlib import Path
 
 
+def apply_checkpoint(source: Path) -> None:
+    source = Path(source)
+    header = Path(__file__).with_name('cook_checkpoint.h').read_bytes()
+    target = source / 'libavcodec/cook_checkpoint.h'
+    if not target.exists() or target.read_bytes() != header:
+        target.write_bytes(header)
+    file = source / 'libavcodec/cook.c'
+    text = file.read_text(encoding='utf-8')
+    if 'TTPLAYER_COOK_CHECKPOINT_V1' not in text:
+        text += '\n/* TTPLAYER_COOK_CHECKPOINT_V1 */\n#include "cook_checkpoint.h"\n'
+        file.write_text(text, encoding='utf-8')
+
+
 def apply(source: Path) -> None:
     file = Path(source) / 'libavcodec/cook.c'
     original = file.read_text(encoding='utf-8')
     marker = 'TTPLAYER_LEGACY_COOK_NOISE_V1'
     if marker in original:
+        apply_checkpoint(source)
         return
     text = original
 
@@ -64,3 +78,4 @@ def apply(source: Path) -> None:
             decode_bytes_and_gain(q, p, inbuffer + sub_packet_size / 2, &p->gains2);
 ''')
     file.write_text(text, encoding='utf-8')
+    apply_checkpoint(source)

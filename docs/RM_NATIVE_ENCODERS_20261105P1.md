@@ -1,5 +1,7 @@
 # 独立 RealAudio 编码与兼容恢复（2026.11.05p1）
 
+本文为历史版本记录。Surround 别名、Cook 尾部、SIPR 分包接口及 XP 动态加载入口的后续结论见 [2026.11.06p1 补全报告](RM_REMAINING_DIFFERENCES_20261106P1.md)。
+
 用户明确要求全部使用独立源码，生产运行不依赖原 `atrc.dll`、`cook.dll`、`sipr.dll`。本轮在保留 Reader 的基础上，增加原宿主 Encoder／StreamEncoder ABI、RM 文件写入和三个独立编码核心。原 DLL 仅用于私有差分测试，不参与构建、运行依赖或发行。
 
 ## 原版行为与实现边界
@@ -92,6 +94,8 @@ SIPR 5 kbps 的原解码库仍有 240 个采样的启动延迟。编码器结束
 本地发行路径为 `rebuild/build/Release/`：`AddIn/ttp_rm.dll`、`ttp_rm-2026.11.05p1.zip`、`ttp_rm-2026.11.05p1-source.zip` 和组件独立校验文件 `ttp_rm-2026.11.05p1-SHA256SUMS.txt`。运行 ZIP 只有 DLL 和 SHA256SUMS；源码 ZIP 包含完整对应源码、修改及许可证。私有 `final-audit.json` 记录三系统日志、最终 DLL、发行包及独立源码重建的哈希和实际结果；不会覆盖播放器整体的校验文件。
 
 ## 保留的差异
+
+以下是 2026.11.05p1 当时的结论。[2026.11.06p1](RM_REMAINING_DIFFERENCES_20261106P1.md) 已用新增原库对照更正 Surround 别名判断，并恢复 Cook 输出时序、SIPR 分包／PLC、RA4 边界和精确定位缓存；本节不再代表当前完成状态。
 
 - 独立编码器输出合法兼容码流，但心理声学、码字选择、瞬态策略和感知音质不承诺逐位复刻原闭源编码器。ATRAC3 的另外五个 Surround 命名预设没有伪装成基础预设的别名。
 - Cook 的额外合成尾块、SIPR 5k 的原库延迟，以及少量解码 1 LSB 差异均按上述边界保留；没有用丢弃真实音频、改名样本或统一舍入掩盖差异。

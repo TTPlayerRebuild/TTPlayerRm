@@ -3,6 +3,7 @@
 #include "ttpcomm/pcm_history.h"
 #include "native_metadata.h"
 #include <cmath>
+#include <deque>
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -10,6 +11,11 @@ extern "C" {
 #include <libavutil/error.h>
 #include <libavutil/mem.h>
 #include <libavutil/samplefmt.h>
+int ttprm_demux_checkpoint(AVFormatContext *,void *,unsigned,int);
+int ttprm_cook_checkpoint(AVCodecContext *,void *,unsigned,int);
+int ttprm_atrac_checkpoint(AVCodecContext *,void *,unsigned,int);
+int ttprm_sipr_checkpoint(AVCodecContext *,void *,unsigned,int);
+int ttprm_optional_io(AVFormatContext *);
 }
 namespace ttp::rm {
 namespace {
@@ -21,12 +27,67 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
     AVCodecContext *decoder_{}; AVPacket *packet_{av_packet_alloc()}; AVFrame *frame_{av_frame_alloc()};
     bool packet_ready_{};int stream_index_{-1}; WAVEFORMATEX format_{}; DWORD channel_mask_{};
     unsigned priming_remaining_{}; bool invert_atrac_{};
-    std::vector<Tag> tags_; Bytes pcm_; size_t consumed_{};
+    std::vector<Tag> tags_; Bytes pcm_,cook_pending_; size_t consumed_{};
     uint64_t media_end_{},position_{}; DWORD duration_{},bitrate_{};
     HRESULT io_error_{S_OK}; bool opened_{},draining_{},eof_{}; LONG stopped_{};
     HRESULT terminal_decode_error_{S_OK};
     bool resume_pending_{}; uint64_t resume_position_{};
     ttp::pcm::History history_;uint64_t decode_head_{};
+    using CheckpointFunction=int(*)(AVCodecContext*,void*,unsigned,int);
+    struct Checkpoint {
+        uint64_t position{};AVCodecID codec{};unsigned priming{};
+        Bytes decoder,demux,pending,extra;
+        size_t bytes()const{return decoder.size()+demux.size()+pending.size()+extra.size()+sizeof(*this);}
+    };
+    std::deque<Checkpoint> checkpoints_;size_t checkpoint_bytes_{};
+    uint64_t next_checkpoint_{};
+    CheckpointFunction checkpoint_function() const {
+        if(!decoder_)return nullptr;
+        if(decoder_->codec_id==AV_CODEC_ID_COOK)return ttprm_cook_checkpoint;
+        if(decoder_->codec_id==AV_CODEC_ID_ATRAC3)return ttprm_atrac_checkpoint;
+        if(decoder_->codec_id==AV_CODEC_ID_SIPR)return ttprm_sipr_checkpoint;
+        return nullptr;
+    }
+    void remember_checkpoint() noexcept {
+        // Capture only between complete output blocks. The supported codecs
+        // produce one frame per packet; no AVFrame or compressed input remains
+        // queued in the codec at this point. Interleaver packets are captured
+        // separately by the demuxer, including its current group position.
+        if(!input_.seekable||input_.remote||!position_||position_<next_checkpoint_||
+           consumed_!=pcm_.size()||draining_||eof_||packet_ready_||FAILED(io_error_))return;
+        const auto fn=checkpoint_function();if(!fn)return;
+        next_checkpoint_=position_+uint64_t(format_.nSamplesPerSec)*5;
+        try{
+            const auto decoder_bytes=fn(decoder_,nullptr,0,0);
+            const auto demux_bytes=ttprm_demux_checkpoint(container_,nullptr,0,0);
+            if(decoder_bytes<=0||decoder_bytes>1024*1024||demux_bytes<=0||demux_bytes>4*1024*1024)return;
+            Checkpoint point;point.position=position_;point.codec=decoder_->codec_id;point.priming=priming_remaining_;
+            point.decoder.resize(decoder_bytes);point.demux.resize(demux_bytes);
+            if(fn(decoder_,point.decoder.data(),unsigned(point.decoder.size()),0)!=decoder_bytes||
+               ttprm_demux_checkpoint(container_,point.demux.data(),unsigned(point.demux.size()),0)!=demux_bytes)return;
+            point.pending=cook_pending_;
+            if(decoder_->extradata_size>0)point.extra.assign(decoder_->extradata,decoder_->extradata+decoder_->extradata_size);
+            const auto bytes=point.bytes();
+            if(bytes>8*1024*1024)return;
+            checkpoints_.push_back(std::move(point));checkpoint_bytes_+=bytes;
+            while(checkpoint_bytes_>8*1024*1024||checkpoints_.size()>256){
+                checkpoint_bytes_-=checkpoints_.front().bytes();checkpoints_.pop_front();
+            }
+        }catch(...){/* Optional acceleration must never make playback fail. */}
+    }
+    bool restore_checkpoint(uint64_t desired) {
+        const Checkpoint *best=nullptr;
+        for(const auto &point:checkpoints_)if(point.position<=desired&&(!best||point.position>best->position))best=&point;
+        if(!best||(desired>=position_&&best->position<=position_))return false;
+        close_container();input_.at(input_.base);position_=0;open_container();prepare();
+        const auto fn=checkpoint_function();require(fn&&best->codec==decoder_->codec_id);
+        require(best->extra.size()==size_t(decoder_->extradata_size)&&
+            (best->extra.empty()||!memcmp(best->extra.data(),decoder_->extradata,best->extra.size())));
+        check_av(fn(decoder_,const_cast<BYTE*>(best->decoder.data()),unsigned(best->decoder.size()),1));
+        check_av(ttprm_demux_checkpoint(container_,const_cast<BYTE*>(best->demux.data()),unsigned(best->demux.size()),1));
+        priming_remaining_=best->priming;cook_pending_=best->pending;
+        position_=decode_head_=best->position;return true;
+    }
     void io_failure(HRESULT hr) {
         io_error_=hr;
         if(hr==E_ABORT || hr==HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
@@ -74,7 +135,10 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
             }
             got=s.input_.read(data,DWORD(bytes));return S_OK;
         });
-        if(FAILED(hr)){s.io_failure(hr);return AVERROR(EIO);}return got?int(got):AVERROR_EOF;
+        if(FAILED(hr)){
+            if(!ttprm_optional_io(s.container_)||hr==E_ABORT||hr==HRESULT_FROM_WIN32(ERROR_CANCELLED))s.io_failure(hr);
+            return AVERROR(EIO);
+        }return got?int(got):AVERROR_EOF;
     }
     static int64_t seek_callback(void *opaque,int64_t offset,int whence) noexcept {
         auto &s=*static_cast<AudioReader*>(opaque);int64_t result=-1;
@@ -91,7 +155,10 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
             check(s.input_.stream->Seek(distance,origin,&pos));
             require(pos.QuadPart>=s.input_.base&&pos.QuadPart-s.input_.base<=INT64_MAX);result=int64_t(pos.QuadPart-s.input_.base);return S_OK;
         });
-        if(FAILED(hr)){if(hr!=E_NOTIMPL)s.io_error_=hr;return AVERROR(EIO);}return result;
+        if(FAILED(hr)){
+            if(hr!=E_NOTIMPL&&(!ttprm_optional_io(s.container_)||hr==E_ABORT||hr==HRESULT_FROM_WIN32(ERROR_CANCELLED)))s.io_error_=hr;
+            return AVERROR(EIO);
+        }return result;
     }
     void check_av(int result){
         check(io_error_);
@@ -103,7 +170,7 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
         if(io_){av_freep(&io_->buffer);avio_context_free(&io_);}
     }
     void open_container(){
-        io_error_=S_OK;draining_=eof_=packet_ready_=false;pcm_.clear();consumed_=0;
+        io_error_=S_OK;draining_=eof_=packet_ready_=false;pcm_.clear();cook_pending_.clear();consumed_=0;
         terminal_decode_error_=S_OK;
         priming_remaining_=0;invert_atrac_=false;
         auto *buffer=static_cast<unsigned char*>(av_malloc(32768));require(buffer,E_OUTOFMEMORY);
@@ -228,8 +295,16 @@ class AudioReader final : public Reader, public Metadata, public Thumbnail, publ
         prepare();if(eof_)return false;
         for(unsigned attempts=0;attempts<100000;++attempts){
             auto result=avcodec_receive_frame(decoder_,frame_);
-            if(result==0){convert();av_frame_unref(frame_);if(!pcm_.empty())return true;continue;}
-            if(result==AVERROR_EOF){eof_=true;return false;}
+            if(result==0){
+                convert();av_frame_unref(frame_);
+                // RealCodec Cook publishes the preceding synthesized block,
+                // only after the next complete packet succeeds. Its Reader
+                // does not call RAFlush at EOF. Keep that pipeline delay;
+                // deleting an encoder packet would instead lose real tail PCM.
+                if(decoder_->codec_id==AV_CODEC_ID_COOK&&!pcm_.empty())pcm_.swap(cook_pending_);
+                if(!pcm_.empty())return true;continue;
+            }
+            if(result==AVERROR_EOF){cook_pending_.clear();eof_=true;return false;}
             if(result!=AVERROR(EAGAIN))check_av(result);
             require(!draining_);
             if(packet_ready_){result=0;packet_ready_=false;}
@@ -315,7 +390,8 @@ public:
             auto n=DWORD(std::min<size_t>(capacity,pcm_.size()-consumed_));
             memcpy(out,pcm_.data()+consumed_,n);
             if(input_.seekable&&!input_.remote)history_.remember(position_,out,n,format_.nBlockAlign);
-            consumed_+=n;position_+=n/format_.nBlockAlign;decode_head_=position_;return buffer->SetLength(n);
+            consumed_+=n;position_+=n/format_.nBlockAlign;decode_head_=position_;
+            remember_checkpoint();return buffer->SetLength(n);
         });
     }
     HRESULT STDMETHODCALLTYPE Seek(DWORD *milliseconds) override{
@@ -329,14 +405,14 @@ public:
             if(resume_pending_ || FAILED(io_error_))replay_to(0);
             if(history_.contains(desired)){position_=desired;*milliseconds=ttp::rm::milliseconds(position_,format_.nSamplesPerSec);return S_OK;}
             position_=decode_head_;history_.clear();
-            if(desired<position_){close_container();input_.at(input_.base);position_=0;open_container();}
+            if(!restore_checkpoint(desired)&&desired<position_){close_container();input_.at(input_.base);position_=0;open_container();}
             while(position_<desired){
                 if(consumed_==pcm_.size()&&!next())break;
                 auto n=std::min<uint64_t>(desired-position_,(pcm_.size()-consumed_)/format_.nBlockAlign);
                 // Keep the exact PCM decoded while positioning too. Repeated
                 // nearby seeks then reuse the same bounded history as Read.
                 if(!input_.remote)history_.remember(position_,pcm_.data()+consumed_,size_t(n)*format_.nBlockAlign,format_.nBlockAlign);
-                consumed_+=size_t(n)*format_.nBlockAlign;position_+=n;
+                consumed_+=size_t(n)*format_.nBlockAlign;position_+=n;remember_checkpoint();
             }
             decode_head_=position_;*milliseconds=ttp::rm::milliseconds(position_,format_.nSamplesPerSec);return S_OK;
         });

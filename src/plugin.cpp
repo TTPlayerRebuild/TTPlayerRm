@@ -42,16 +42,20 @@ public:
     HRESULT STDMETHODCALLTYPE Configurable()override{return S_OK;}
     HRESULT STDMETHODCALLTYPE Configure(HWND parent)override{return configure_encoder(parent,kind_);}
 };
-class SoundAddIn final : public AddIn {
+HRESULT make_sipr_packet_decoder(DWORD,DWORD,void **);
+class SoundAddIn final : public AddIn, public SiprPacketDecoderFactory {
     LONG refs_{1};
 public:
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id,void **out) override {
         if(!out)return E_POINTER;*out=nullptr;
-        if(!same(id,IID_IUnknown)&&!same(id,iid_addin))return E_NOINTERFACE;
-        *out=static_cast<AddIn*>(this);AddRef();return S_OK;
+        if(same(id,iid_sipr_packet_factory))*out=static_cast<SiprPacketDecoderFactory*>(this);
+        else if(same(id,IID_IUnknown)||same(id,iid_addin))*out=static_cast<AddIn*>(this);
+        else return E_NOINTERFACE;
+        AddRef();return S_OK;
     }
     ULONG STDMETHODCALLTYPE AddRef() override{return InterlockedIncrement(&refs_);}
     ULONG STDMETHODCALLTYPE Release() override{auto n=InterlockedDecrement(&refs_);if(!n)delete this;return n;}
+    HRESULT STDMETHODCALLTYPE Create(DWORD bitrate,DWORD flags,void **out)override{return make_sipr_packet_decoder(bitrate,flags,out);}
     HRESULT STDMETHODCALLTYPE Enum(DWORD index,GUID *category,void **out) override{
         if(!out)return E_POINTER;*out=nullptr;if(!category)return E_POINTER;
         if(index>3)return E_INVALIDARG;

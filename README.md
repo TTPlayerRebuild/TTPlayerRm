@@ -1,5 +1,7 @@
 # ttp_rm
 
+2026.11.06p1：[剩余差异补全](docs/RM_REMAINING_DIFFERENCES_20261106P1.md)。恢复 ATRAC3 原别名预设与分通道带宽、Cook 输入滤波及输出时序，增加 SIPR 分包／丢包隐藏接口、RA4 音频边界和有界精确定位缓存，并修复遗漏 YY-Thunks 专用 DLL 入口导致的 XP 动态加载退出异常。当前验证和仍保留的数值／样本限制见报告。
+
 2026.11.05p1：[独立编码与兼容恢复](docs/RM_NATIVE_ENCODERS_20261105P1.md)。增加 ATRAC3、Cook、SIPR 独立源码编码、RM 封装和原宿主 Encoder／Thumbnail ABI；扩展非默认 ATRAC3 预热值，修复 SIPR 5k 启动 AGC 和 16k 基音回退。具体已开放预设、实际验收范围和与原库的差异见文档。
 
 2026.11.05：[ATRAC3／Cook／SIPR 补全与旧系统验收](docs/RM_COMPLETION_20261105.md)。修复 RM 短包误判为正常结束、定位取消后查询格式崩溃，进一步恢复 SIPR 数值路径；旧 `.ra` 尾部索引处理保持兼容。

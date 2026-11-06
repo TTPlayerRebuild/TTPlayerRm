@@ -27,8 +27,9 @@ $notes = @"
 
 解压 ttp_rm-$version.zip，关闭播放器后，将 AddIn/ttp_rm.dll 放入安装目录。
 支持 RealAudio 的 Cook、ATRAC3、SIPR、14.4、28.8、AAC、DNET/AC3、MP3 ADU；恢复原 RMMD/RJMD 标签和封面读写。
+增加独立源码的 ATRAC3、Cook、SIPR 编码及 RM 写入；可用预设和与原编码器的差异见源码验收文档。
 同一 x86 DLL 面向 XP SP3、Win7 和新系统，CPU 需要 SSE2。
-运行包仅包含 AddIn/ttp_rm.dll 和 SHA256SUMS.txt。对应源码附件含完整 FFmpeg 源码、修改和构建说明，许可证保留在源码中，不嵌入 DLL。
+运行包仅包含 AddIn/ttp_rm.dll 和 SHA256SUMS.txt。对应源码附件含完整 FFmpeg、AtracDEnc 源码、修改和构建说明，许可证保留在源码中，不嵌入 DLL。
 
 [源码与验证说明]($repoUrl/tree/$Commit)
 [第三方版本、来源和修改记录]($repoUrl/blob/$Commit/docs/DEPENDENCIES.md)

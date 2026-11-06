@@ -1,5 +1,7 @@
 # ttp_rm
 
+2026.11.05p1：[独立编码与兼容恢复](docs/RM_NATIVE_ENCODERS_20261105P1.md)。增加 ATRAC3、Cook、SIPR 独立源码编码、RM 封装和原宿主 Encoder／Thumbnail ABI；扩展非默认 ATRAC3 预热值，修复 SIPR 5k 启动 AGC 和 16k 基音回退。具体已开放预设、实际验收范围和与原库的差异见文档。
+
 2026.11.05：[ATRAC3／Cook／SIPR 补全与旧系统验收](docs/RM_COMPLETION_20261105.md)。修复 RM 短包误判为正常结束、定位取消后查询格式崩溃，进一步恢复 SIPR 数值路径；旧 `.ra` 尾部索引处理保持兼容。
 
 2026.10.29p1：[低码率 SIPR 精度恢复](docs/SIPR_NUMERICS_20261029P1.md) · [Cook 结束流程与多声道修复](docs/COOK_END_OF_STREAM_20261029P1.md) · [E-AC-3 隔离验证](docs/EAC3_ISOLATION_20261029P1.md)。
@@ -14,7 +16,7 @@ Cook／DNET 补噪、SIPR 16k 算法及损坏尾部状态修复（2026-10-29）�
 
 ATRAC3 预热与极性修复、Cook／DNET／SIPR 扩展对照：[2026-10-25](docs/DECODER_PARITY_FIX_20261025.md)。
 
-TTPlayer 5.7.9 兼容的 x86 RealAudio Reader 插件。恢复原工厂、Reader 和元数据 ABI，使用固定的 FFmpeg 9.0.2 最小静态后端；无需额外安装 VC 运行库或 RealCodec 外部解码器。
+TTPlayer 5.7.9 兼容的 x86 RealAudio Reader／Encoder 插件。恢复原 Reader 和元数据 ABI，并通过原宿主编码接口提供 RealAudio 转换，使用固定的 FFmpeg 9.0.2 最小静态后端、AtracDEnc 和独立 Cook／SIPR 编码核心；无需额外安装 VC 运行库或 RealCodec 外部 DLL。
 
 ## 构建
 
@@ -26,10 +28,10 @@ TTPlayer 5.7.9 兼容的 x86 RealAudio Reader 插件。恢复原工厂、Reader 
 
 - `build/Release/ttp_rm.dll`：XP SP3／Win7／Windows 10/11 共用，要求 SSE2。
 - `ttp_rm-YYYY.MM.DD.zip`：仅 DLL 与 SHA256SUMS。
-- `ttp_rm-YYYY.MM.DD-source.zip`：独立对应源码附件，包含本项目、完整固定 FFmpeg 源码、兼容修改、GNU make 源码、许可证和重建入口。
+- `ttp_rm-YYYY.MM.DD-source.zip`：独立对应源码附件，包含本项目、完整固定 FFmpeg／AtracDEnc 源码、兼容修改、GNU make 源码、许可证和重建入口。
 - Action 的 Release a Version 使用北京时间日期与同日 pN 版本；自动构建、校验 XP/Win7 导入并打包，不运行或上传私有测试。
 
-源码附件内 `third_party/ffmpeg` 会自动作为源目录使用，可修改后重新构建。VC-LTL／YY-Thunks 仍按固定摘要获取。版权和完整许可证保存在仓库与源码附件，不嵌入 DLL。
+源码附件内 `third_party/ffmpeg` 和 `third_party/atracdenc` 会自动作为源目录使用，可修改后重新构建。VC-LTL／YY-Thunks 仍按固定摘要获取。版权和完整许可证保存在仓库与源码附件，不嵌入 DLL。
 
 [重建依据、差异和验证](docs/IMPLEMENTATION_AND_VALIDATION.md) · [依赖及修改记录](docs/DEPENDENCIES.md)
 

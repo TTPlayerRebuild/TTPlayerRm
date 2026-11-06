@@ -5,6 +5,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_dnet.py"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_sipr.py"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_rm_packets.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_atrac.py"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacy16k.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacy16k_tables.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sipr_legacylow.h"
@@ -38,6 +39,7 @@ add_library(codec INTERFACE)
 target_include_directories(codec INTERFACE "${_ffmpeg_source}"
   "${TTP_FFMPEG_BUILD}/ffmpeg-rm")
 target_link_libraries(codec INTERFACE
+  "${TTP_FFMPEG_BUILD}/ffmpeg-rm/libswresample/swresample.lib"
   "${TTP_FFMPEG_BUILD}/ffmpeg-rm/libavformat/avformat.lib"
   "${TTP_FFMPEG_BUILD}/ffmpeg-rm/libavcodec/avcodec.lib"
   "${TTP_FFMPEG_BUILD}/ffmpeg-rm/libavutil/avutil.lib" bcrypt)

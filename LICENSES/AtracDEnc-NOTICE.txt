@@ -1,0 +1,21 @@
+ATRAC3 encoder: AtracDEnc by dcherednik and contributors
+https://github.com/dcherednik/atracdenc
+Pinned revision: cb170709f836cb43dc0312455188c791159d81dc
+Archive SHA-256: 64c8febd3cde0c4225611bd3ed399b5aa7a1c2eced2a13f61403c17e88d7c207
+
+The selected ATRAC3 core is LGPL-2.1-or-later; see AtracDEnc-LGPL-2.1.txt.
+Its included KissFFT implementation is BSD-3-Clause; see
+KissFFT-BSD-3-Clause.txt. No proprietary ATRAC codec is linked or loaded.
+
+The build selects ATRAC3, QMF/MDCT, psychoacoustics, bit allocation and KissFFT.
+It excludes ATRAC1, ATRAC3Plus, libgha and all upstream file/PCM I/O backends.
+Local modifications are applied by cmake/prepare_atrac3.py: remove unrelated
+template instantiations, initialize the shared ATH table immutably, and return
+internal errors as exceptions instead of terminating the plugin host.
+src/atrac3_encoder.cpp adds streaming PCM16 input, padding, draining and error
+handling; it does not claim to reproduce Sony/Real encoder bitstreams or the
+original Surround presets.
+
+The corresponding-source package includes the complete pinned upstream source
+and this project's build/patch sources. These components retain their own
+licenses; the project's MIT license does not replace them.

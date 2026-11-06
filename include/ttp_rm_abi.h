@@ -21,6 +21,12 @@ inline constexpr GUID iid_thumbnail{
     0xb5e770af, 0xdfb0, 0x43e5, {0x9b, 0x0c, 0x3e, 0xe9, 0x8e, 0x7b, 0x62, 0x48}};
 inline constexpr GUID cat_reader{
     0x476d15a5, 0xd863, 0x416a, {0x8a, 0x59, 0xa9, 0xc7, 0xd7, 0x2c, 0xe0, 0x4e}};
+inline constexpr GUID cat_encoder{
+    0x5954a909, 0x9e02, 0x4650, {0x99, 0x5e, 0xf7, 0x53, 0x5e, 0xe2, 0xbd, 0x8b}};
+inline constexpr GUID iid_encoder{
+    0x04b9a359, 0x7ff7, 0x4ee9, {0x9c, 0xfb, 0xae, 0xbb, 0x3a, 0x33, 0x1d, 0xc7}};
+inline constexpr GUID iid_stream_encoder{
+    0xffb27df8, 0x77ef, 0x4ba7, {0x89, 0x45, 0x7e, 0x14, 0x4c, 0x38, 0x1c, 0xbe}};
 struct Buffer : IUnknown {
     virtual HRESULT STDMETHODCALLTYPE SetLength(DWORD) = 0;
     virtual HRESULT STDMETHODCALLTYPE Capacity(DWORD *) = 0;
@@ -82,6 +88,22 @@ struct Creator : IUnknown {
 };
 struct ReaderCreator : Creator {
     virtual HRESULT STDMETHODCALLTYPE Extensions(wchar_t **) = 0;
+};
+// Same x86 slots as the original player's Encoder/EncoderCreator contracts.
+struct Encoder : IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE Open(const wchar_t *, WAVEFORMATEX *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Start() = 0;
+    virtual HRESULT STDMETHODCALLTYPE Finish() = 0;
+    virtual HRESULT STDMETHODCALLTYPE Write(Buffer *, DWORD *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Extension(wchar_t **) = 0;
+};
+struct StreamEncoder : Encoder {
+    virtual HRESULT STDMETHODCALLTYPE OpenStream(IStream *, WAVEFORMATEX *) = 0;
+};
+struct EncoderCreator : Creator {
+    virtual HRESULT STDMETHODCALLTYPE Extension(wchar_t **) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Configurable() = 0;
+    virtual HRESULT STDMETHODCALLTYPE Configure(HWND) = 0;
 };
 struct AddIn : IUnknown {
     virtual HRESULT STDMETHODCALLTYPE Enum(DWORD, GUID *, void **) = 0;

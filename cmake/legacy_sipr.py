@@ -75,6 +75,22 @@ def apply(source: Path) -> None:
 #else
 ''' + old + '''#endif
 ''')
+    if 'TTPLAYER_LEGACY_SIPR_16K_PITCH_FALLBACK_V1' not in text:
+        replace('''    } else
+        return 3 * pitch_lag_prev;
+}
+''', '''    } else
+#if defined(TTP_RM_LEGACY_SIPR)
+        /* TTPLAYER_LEGACY_SIPR_16K_PITCH_FALLBACK_V1
+         * Original decoder indices 62/63 advance the previous integer lag.
+         * Ordinary indices 0..61 retain the existing fractional interval.
+         */
+        return 3 * (pitch_lag_prev + 1);
+#else
+        return 3 * pitch_lag_prev;
+#endif
+}
+''')
 
     # Also refresh headers on a subsequent invocation; the build identity must
     # include these files so a compatibility change cannot reuse stale objects.
@@ -159,6 +175,23 @@ def apply(source: Path) -> None:
     tt_sipr_low_highpass(out_data, synth, ctx->highpass_filt_mem, frame_size);
 #else
 ''' + old + '''#endif
+''')
+    if 'TTPLAYER_LEGACY_SIPR_5K_AGC_INIT_V1' not in text:
+        replace('''    for (i = 0; i < 4; i++)
+        ctx->energy_history[i] = -14;
+''', '''#if defined(TTP_RM_LEGACY_SIPR)
+    /* TTPLAYER_LEGACY_SIPR_5K_AGC_INIT_V1
+     * The original 5k decoder synthesizes a hidden startup frame. Upstream
+     * removes its 240-sample latency; retain the resulting AGC state too.
+     * Observed state bits 0x3f1119fe, independent of the first input frame.
+     * This is a decoder initial condition, not an encoder gain adjustment.
+     */
+    if (ctx->mode == MODE_5k0)
+        ctx->postfilter_agc = 0.5668028593063354f;
+#endif
+
+    for (i = 0; i < 4; i++)
+        ctx->energy_history[i] = -14;
 ''')
     if text != original:
         file.write_text(text, encoding='utf-8')

@@ -8,15 +8,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(cmake/legacy_windows.cmake)
 include(cmake/size_release.cmake)
 include(cmake/codec.cmake)
+include(cmake/atrac3_encoder.cmake)
 include(cmake/version.cmake)
-add_library(ttp_rm SHARED src/plugin.cpp src/reader.cpp src/ttp_rm.def
+add_library(ttp_rm SHARED src/plugin.cpp src/reader.cpp src/encoder.cpp src/encoder_settings.cpp
+  src/encoder_backend.cpp src/cook_encoder.cpp src/sipr_encoder.cpp
+  src/rm_muxer.cpp src/encoder_options.rc src/ttp_rm.def
   "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc")
 add_dependencies(ttp_rm ttp_rm_version)
 target_include_directories(ttp_rm PUBLIC include PRIVATE src)
 target_compile_definitions(ttp_rm PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
   _WIN32_WINNT=0x0501 _CRT_SECURE_NO_WARNINGS)
 target_compile_options(ttp_rm PRIVATE /W4 /permissive- /EHsc /GR- /utf-8 /fp:precise /arch:SSE2)
-target_link_libraries(ttp_rm PRIVATE codec ole32 uuid shlwapi)
+target_link_libraries(ttp_rm PRIVATE codec atrac3_encoder ole32 uuid shlwapi shell32 user32)
 set_target_properties(ttp_rm PROPERTIES PREFIX "" OUTPUT_NAME "ttp_rm")
 add_custom_command(TARGET ttp_rm POST_BUILD
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_legacy_imports.py"

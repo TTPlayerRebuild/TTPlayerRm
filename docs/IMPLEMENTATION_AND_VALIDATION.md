@@ -1,5 +1,7 @@
 # RealAudio 重建：依据、行为和验证
 
+本文保留初期重建和当时环境限制的记录。后续原 RealCodec 对照及兼容修复见 [2026-11-05 验收](RM_COMPLETION_20261105.md)；新增独立 ATRAC3／Cook／SIPR 编码、宿主转换接口及当前验证范围见 [2026.11.05p1](RM_NATIVE_ENCODERS_20261105P1.md)。下文“缺少 MSVCR71”等描述是历史测试条件，不代表当前仍受该条件阻断。
+
 ## 1. 原版版本绑定
 
 对照 DLL 是 `AddIn/ttp_rm.dll`（62,304 字节），SHA-256：

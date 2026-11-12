@@ -14,9 +14,13 @@ inline HRESULT copy_format(const WAVEFORMATEX& source,DWORD mask,WORD valid_bits
     if(source.wFormatTag!=WAVE_FORMAT_PCM&&source.wFormatTag!=WAVE_FORMAT_IEEE_FLOAT)return E_INVALIDARG;
     if(!valid_bits)valid_bits=source.wBitsPerSample;
     if(!valid_bits||valid_bits>source.wBitsPerSample)return E_INVALIDARG;
+    if(!source.nChannels)return E_INVALIDARG;
+    if(source.wFormatTag==WAVE_FORMAT_IEEE_FLOAT&&
+       ((source.wBitsPerSample!=32&&source.wBitsPerSample!=64)||valid_bits!=source.wBitsPerSample))return E_INVALIDARG;
     unsigned count=0;for(DWORD bits=mask;bits;bits&=bits-1)++count;
     if(mask&&count!=source.nChannels)return E_INVALIDARG;
-    const bool extended=source.nChannels>2||valid_bits!=source.wBitsPerSample;
+    const bool extended=source.nChannels>2||valid_bits!=source.wBitsPerSample||
+        (mask&&mask!=standard_mask(source.nChannels));
     const auto size=extended?sizeof(WAVEFORMATEXTENSIBLE):sizeof(WAVEFORMATEX);
     auto* p=static_cast<WAVEFORMATEX*>(CoTaskMemAlloc(size));if(!p)return E_OUTOFMEMORY;
     ZeroMemory(p,size);*p=source;p->cbSize=0;
